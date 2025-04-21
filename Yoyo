@@ -1,0 +1,96 @@
+import os
+import time
+import threading
+import tkinter as tk
+from PIL import ImageGrab
+import xml.etree.ElementTree as ET
+from flask import Flask, render_template_string, send_from_directory
+
+# === Setup paths ===
+SAVE_DIR = os.path.join(os.getcwd(), 'static', 'screenshots')
+XML_FILE = os.path.join(os.getcwd(), 'data.xml')
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+# === Initialize XML ===
+if not os.path.exists(XML_FILE):
+    root = ET.Element("screenshots")
+    tree = ET.ElementTree(root)
+    tree.write(XML_FILE)
+
+def save_metadata(filename, timestamp):
+    tree = ET.parse(XML_FILE)
+    root = tree.getroot()
+    shot = ET.SubElement(root, "screenshot")
+    ET.SubElement(shot, "filename").text = filename
+    ET.SubElement(shot, "timestamp").text = timestamp
+    tree.write(XML_FILE)
+
+def take_screenshot():
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    filename = f"{timestamp}.png"
+    filepath = os.path.join(SAVE_DIR, filename)
+    img = ImageGrab.grab()
+    img.save(filepath)
+    save_metadata(filename, timestamp)
+    print(f"[+] Screenshot saved: {filename}")
+
+def auto_capture(interval=60):
+    while True:
+        take_screenshot()
+        time.sleep(interval)
+
+def start_floating_button():
+    root = tk.Tk()
+    root.title("Capture")
+    root.geometry("150x50+100+100")
+    root.attributes('-topmost', True)
+    root.resizable(False, False)
+    tk.Button(root, text="Capture", command=take_screenshot).pack(expand=True, fill=tk.BOTH)
+    root.mainloop()
+
+# === Flask Web App ===
+app = Flask(__name__)
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Screenshot Gallery</title>
+    <style>
+        body { font-family: Arial; background: #f4f4f4; text-align: center; }
+        img { max-width: 300px; margin: 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Screenshot Gallery</h1>
+    {% for shot in shots %}
+        <div>
+            <p>{{ shot.timestamp }}</p>
+            <img src="/static/screenshots/{{ shot.filename }}">
+        </div>
+    {% endfor %}
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    tree = ET.parse(XML_FILE)
+    root = tree.getroot()
+    shots = [
+        {
+            'filename': s.find('filename').text,
+            'timestamp': s.find('timestamp').text
+        } for s in root.findall('screenshot')
+    ]
+    shots.sort(key=lambda x: x['timestamp'], reverse=True)
+    return render_template_string(HTML_TEMPLATE, shots=shots)
+
+def start_flask():
+    app.run(debug=False, port=5000, use_reloader=False)
+
+# === Main ===
+if __name__ == "__main__":
+    threading.Thread(target=auto_capture, daemon=True).start()
+    threading.Thread(target=start_flask, daemon=True).start()
+    start_floating_button()
