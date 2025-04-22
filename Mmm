@@ -1,0 +1,152 @@
+import os
+import time
+import threading
+import tkinter as tk
+from PIL import ImageGrab
+import io
+import base64
+import xml.etree.ElementTree as ET
+from flask import Flask, render_template_string
+
+# === Global Variables ===
+XML_FILE = 'data.xml'
+screenshots = []  # In-memory (timestamp, base64_image)
+
+# === Ensure XML Exists ===
+if not os.path.exists(XML_FILE):
+    root = ET.Element("screenshots")
+    ET.ElementTree(root).write(XML_FILE)
+
+# === Screenshot Logic ===
+def save_metadata(timestamp):
+    tree = ET.parse(XML_FILE)
+    root = tree.getroot()
+    shot = ET.SubElement(root, "screenshot")
+    ET.SubElement(shot, "timestamp").text = timestamp
+    tree.write(XML_FILE)
+
+def take_screenshot():
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    img = ImageGrab.grab()
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    img_b64 = base64.b64encode(buffer.getvalue()).decode()
+    screenshots.append((timestamp, img_b64))
+    save_metadata(timestamp)
+    print(f"[+] Screenshot captured at {timestamp}")
+
+def auto_capture(interval=10):
+    while True:
+        take_screenshot()
+        time.sleep(interval)
+
+# === Floating Transparent Capture Button ===
+def start_floating_button():
+    root = tk.Tk()
+    root.title("Capture")
+    root.overrideredirect(True)
+    root.geometry("80x40+50+50")
+    root.attributes('-topmost', True)
+    root.configure(bg='black')
+    root.wm_attributes("-transparentcolor", "black")
+
+    btn = tk.Button(root, text="📸", command=take_screenshot, bg="white", fg="black", font=("Arial", 12, "bold"))
+    btn.pack(expand=True, fill=tk.BOTH)
+
+    # Dragging support
+    def drag(event):
+        x = root.winfo_pointerx() - drag.offset_x
+        y = root.winfo_pointery() - drag.offset_y
+        root.geometry(f'+{x}+{y}')
+    
+    def start_drag(event):
+        drag.offset_x = event.x
+        drag.offset_y = event.y
+
+    btn.bind('<Button-1>', start_drag)
+    btn.bind('<B1-Motion>', drag)
+
+    root.mainloop()
+
+# === Flask Web App ===
+app = Flask(__name__)
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Screenshots</title>
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+        }
+        .card {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            width: 320px;
+        }
+        .card img {
+            width: 100%;
+            border-radius: 5px;
+        }
+        .card p {
+            font-size: 12px;
+            color: #777;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Live Screenshot Gallery</h1>
+    <div class="grid">
+        {% for shot in shots %}
+            <div class="card">
+                <img src="data:image/png;base64,{{ shot.image_data }}" />
+                <p>{{ shot.timestamp }}</p>
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    tree = ET.parse(XML_FILE)
+    root = tree.getroot()
+    shots = []
+    for i, shot in enumerate(root.findall('screenshot')):
+        timestamp = shot.find('timestamp').text
+        if i < len(screenshots):
+            shots.append({
+                'timestamp': timestamp,
+                'image_data': screenshots[i][1]
+            })
+    shots.reverse()
+    return render_template_string(HTML_TEMPLATE, shots=shots)
+
+def start_flask():
+    app.run(debug=False, port=5000, use_reloader=False)
+
+# === Launch Everything ===
+if __name__ == "__main__":
+    threading.Thread(target=auto_capture, daemon=True).start()
+    threading.Thread(target=start_flask, daemon=True).start()
+    start_floating_button()
