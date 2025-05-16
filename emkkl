@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Export to Outlook</title>
+    <script>
+        function exportToOutlook() {
+            // Grab the content to send
+            const content = document.getElementById("reportData").innerText;
+
+            // Email fields
+            const subject = encodeURIComponent("Weekly Status Report");
+            const body = encodeURIComponent(content);
+
+            // Open in default email client (Outlook if set)
+            const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
+            window.location.href = mailtoLink;
+        }
+    </script>
+</head>
+<body>
+
+    <div id="reportData">
+        <h2>System Check</h2>
+        <p>✔ All servers running</p>
+        <p>Checked by: Mridul Baheti</p>
+        <p>Date: 16 May 2025</p>
+    </div>
+
+    <button onclick="exportToOutlook()">Export to Outlook</button>
+
+</body>
+</html>
