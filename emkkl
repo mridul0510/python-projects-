@@ -1,105 +1,56 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Export Table - Email, Clipboard & CSV</title>
-    <script>
-        // Extract table data as plain text
-        function getTableDataPlain() {
-            const table = document.getElementById("dataTable");
-            let output = "Exported Table Data:\n\n";
+from flask import Flask, send_file, request
+from docx import Document
+import io
 
-            for (let i = 0; i < table.rows.length; i++) {
-                const row = table.rows[i];
-                for (let j = 0; j < row.cells.length; j++) {
-                    output += row.cells[j].innerText + "\t";
-                }
-                output += "\n";
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return '''
+    <html>
+    <body>
+        <h2>Export to Word</h2>
+        <textarea id="content" rows="10" cols="50">Enter your content here...</textarea><br>
+        <button onclick="exportToWord()">Download Word File</button>
+
+        <script>
+            function exportToWord() {
+                const content = document.getElementById("content").value;
+
+                fetch('/generate-word', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: content })
+                })
+                .then(response => response.blob())
+                .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'exported.docx';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                });
             }
+        </script>
+    </body>
+    </html>
+    '''
 
-            return output;
-        }
+@app.route('/generate-word', methods=['POST'])
+def generate_word():
+    data = request.get_json()
+    text = data.get("text", "")
 
-        // Extract table data as CSV
-        function getTableDataCSV() {
-            const table = document.getElementById("dataTable");
-            let csv = "";
+    doc = Document()
+    doc.add_paragraph(text)
 
-            for (let i = 0; i < table.rows.length; i++) {
-                const row = table.rows[i];
-                let rowData = [];
-                for (let j = 0; j < row.cells.length; j++) {
-                    rowData.push('"' + row.cells[j].innerText + '"');
-                }
-                csv += rowData.join(",") + "\n";
-            }
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
 
-            return csv;
-        }
+    return send_file(buffer, as_attachment=True, download_name="exported.docx", mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
-        // Export to email
-        function exportToOutlook() {
-            const data = getTableDataPlain();
-            const subject = encodeURIComponent("Exported Webpage Table");
-            const body = encodeURIComponent(data);
-            const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
-            window.location.href = mailtoLink;
-        }
-
-        // Copy to clipboard
-        function copyToClipboard() {
-            const text = getTableDataPlain();
-            navigator.clipboard.writeText(text).then(() => {
-                alert("Table data copied to clipboard!");
-            }).catch(err => {
-                alert("Failed to copy: " + err);
-            });
-        }
-
-        // Download as CSV
-        function downloadCSV() {
-            const csvData = getTableDataCSV();
-            const blob = new Blob([csvData], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "exported_table.csv";
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-    </script>
-</head>
-<body>
-
-    <h2>Weekly Server Report</h2>
-
-    <table id="dataTable" border="1">
-        <tr>
-            <th>Server</th>
-            <th>Status</th>
-            <th>Last Checked</th>
-        </tr>
-        <tr>
-            <td>Server 1</td>
-            <td>✅ Running</td>
-            <td>16 May 2025</td>
-        </tr>
-        <tr>
-            <td>Server 2</td>
-            <td>⚠️ Needs Attention</td>
-            <td>16 May 2025</td>
-        </tr>
-        <tr>
-            <td>Server 3</td>
-            <td>❌ Offline</td>
-            <td>16 May 2025</td>
-        </tr>
-    </table>
-
-    <br>
-    <button onclick="exportToOutlook()">📧 Export to Outlook</button>
-    <button onclick="copyToClipboard()">📋 Copy to Clipboard</button>
-    <button onclick="downloadCSV()">📁 Download as CSV</button>
-
-</body>
-</html>
+if __name__ == '__main__':
+    app.run(debug=True)
